@@ -124,7 +124,7 @@ def sekunden_zu_srt_zeit(sekunden: float) -> str:
     return f"{h:02}:{m:02}:{s:02},{millis:03}"
 
 
-def transkribiere_audio_zu_srt(dateipfad: str, model: whisper.Whisper, sprache: Union[str, None]) -> str:
+def transkribiere_audio_zu_srt(dateipfad: str, model, sprache: Union[str, None]) -> str:
     ergebnis = model.transcribe(dateipfad, fp16=False, language=sprache)
     segmente = ergebnis['segments']
     return erstelle_srt(segmente)
