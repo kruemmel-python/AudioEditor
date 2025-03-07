@@ -376,7 +376,7 @@ def video_untertitelung():
     )
     print(f"Vor dem Laden des Modells. Inhalt von whisper: {dir(whisper)}")  # Debugging
     try:
-        model = whisper.load_model(model_option)
+        model = whisper.load_model("base") # Harte Kodierung für den Anfang
         print("Modell erfolgreich geladen!")  # Debugging
     except Exception as e:
         st.error(f"Fehler beim Laden des Modells: {e}")
