@@ -4,6 +4,9 @@ Dieses Handbuch beschreibt detailliert die Funktionen und Verwendungsmöglichkei
 
 ## 🎵 1. Audio Editor
 
+![image](https://github.com/user-attachments/assets/68ebb482-fe75-46e8-b28e-4b0c3f443347)
+
+
 Der Audio Editor ermöglicht die Bearbeitung von Audiodateien im **WAV-, MP3- und FLAC-Format**.
 
 ### 1.1. Hochladen
@@ -83,6 +86,7 @@ Die Bearbeitungsfunktionen befinden sich im **linken Seitenmenü**.
 ---
 
 ## 🎬 2. Video-Untertitelung
+![image](https://github.com/user-attachments/assets/1bf8e676-7f52-4d31-84be-97eb7a53eb2f)
 
 Dieser Modus ermöglicht das **automatische Erstellen und Einbetten von Untertiteln** in Videos mit **Whisper AI**.
 
