@@ -14,6 +14,8 @@ import subprocess
 import logging
 import whisper  # Wichtig: Sicherstellen, dass whisper installiert ist
 from typing import Union
+from pedalboard import Pedalboard, Reverb, Delay, PitchShift, Distortion, Bitcrush  # Für Audioeffekte: Bitcrush hinzugefügt
+
 
 # Logging konfigurieren
 logging.basicConfig(level=logging.INFO)
@@ -48,7 +50,7 @@ def rauschreduktion_audio_datei_streamlit(y, sr, algorithmus=DEFAULT_ALGORITHMUS
 def trim_audio(y, sr, start_time, end_time):
     start_sample = int(start_time * sr)
     end_sample = int(end_time * sr)
-    return y[start_sample:end_sample]
+    return y[start_sample:end_time]
 
 
 def adjust_volume(y, volume_factor):
@@ -88,6 +90,28 @@ def normalize_audio(y):
     return y
 
 
+def apply_echo(y, sr, delay_seconds=0.1, decay=0.5):
+    """Wendet einen Echo-Effekt mit Pedalboard an."""
+    board = Pedalboard([Delay(delay_seconds=delay_seconds, feedback=decay)])
+    return board(y, sr)
+
+def apply_reverb(y, sr, room_size=0.5, damping=0.5, wet_level=0.3):
+    """Wendet einen Hall-Effekt mit Pedalboard an."""
+    board = Pedalboard([Reverb(room_size=room_size, damping=damping, wet_level=wet_level)])
+    return board(y, sr)
+
+
+def apply_voice_distortion(y, sr, pitch_shift_amount=3, bit_depth=8):
+    """Wendet eine Stimmverzerrung mit Pedalboard an, inklusive Bitcrushing."""
+    board = Pedalboard([
+        PitchShift(semitones=pitch_shift_amount),
+        Bitcrush(bit_depth=bit_depth) # Bitcrush hinzufügen
+    ])
+
+    return board(y, sr)
+
+
+
 def display_waveform(y, sr, start_time=None, end_time=None):
     fig, ax = plt.subplots(figsize=(10, 2))
     librosa.display.waveshow(y, sr=sr, ax=ax)
@@ -98,6 +122,42 @@ def display_waveform(y, sr, start_time=None, end_time=None):
     ax.set_xlabel("Zeit (Sekunden)")
     ax.set_ylabel("Amplitude")
     st.pyplot(fig)
+
+def save_audio(y, sr, filename, format='WAV', bitrate='128k'):
+    """Speichert Audio mit angegebener Bitrate."""
+    temp_file = tempfile.NamedTemporaryFile(suffix=".wav", delete=False) # Wichtig: delete=False
+    temp_file_name = temp_file.name  # Speichere den Namen, bevor die Datei geschlossen wird
+    sf.write(temp_file_name, y, sr, format='WAV')
+    temp_file.close()  # Schließe die Datei, aber lösche sie noch nicht
+
+    output_filename = filename
+    if format.lower() != 'wav':
+        output_filename = filename.rsplit('.', 1)[0] + '.' + format.lower()
+
+    command = [
+        'ffmpeg',
+        '-y',
+        '-i', temp_file_name,
+        '-vn',
+        '-acodec', 'libmp3lame' if format.lower() == 'mp3' else 'libopus' if format.lower() == 'ogg' else 'pcm_s16le',
+        '-ab', bitrate,
+        output_filename
+    ]
+
+    result = subprocess.run(command, capture_output=True, text=True)
+
+    # Lösche die temporäre Datei nach der Verwendung
+    try:
+        os.remove(temp_file_name)
+    except OSError as e:
+        logging.error(f"Fehler beim Löschen der temporären Datei: {e}")
+
+
+    if result.returncode != 0:
+        logging.error(f"FFmpeg Fehler: {result.stderr}")
+        raise Exception(f"Fehler beim Speichern der Audiodatei: {result.stderr}")
+
+    return output_filename
 
 
 # --- Funktionsdefinitionen (Video-Untertitelung) ---
@@ -130,17 +190,20 @@ def transkribiere_audio_zu_srt(dateipfad: str, model, sprache: Union[str, None])
     return erstelle_srt(segmente)
 
 
-def merge_video_mit_srt(video_path: str, srt_path: str, output_path: str) -> tuple[bool, str]:
+def merge_video_mit_srt(video_path: str, srt_path: str, output_video_path: str, bitrate: str, resolution: str, fps: int) -> tuple[bool, str]:
     srt_path_safe = srt_path.replace('\\', '/').replace(':', '\\:')
 
     command = [
         "ffmpeg",
         "-i", video_path,
-        "-vf", f"subtitles='{srt_path_safe}'",
+        "-vf", f"subtitles='{srt_path_safe}',scale={resolution}",  # Auflösung hinzugefügt
         "-c:v", "libx264",
+        "-preset", "veryslow",  # Bessere Qualität
+        "-b:v", bitrate,       # Bitrate hinzugefügt
+        "-r", str(fps),           # Framerate hinzugefügt
         "-c:a", "copy",
         "-y",
-        output_path
+        output_video_path
     ]
 
     result = subprocess.run(command, capture_output=True, text=True)
@@ -226,8 +289,8 @@ def audio_editor():
 
             # --- Tonhöhe ---
             with st.sidebar.expander("Tonhöhe", expanded=False):
-                st.subheader("Tonhöhe anpassen")
-                pitch_factor = st.slider("Tonhöhenschritte (Halbtöne)", min_value=-12, max_value=12, value=0, step=1)
+                st.subheader("Tonhöhe anpassen (fein)")
+                pitch_factor = st.slider("Tonhöhenschritte (Halbtöne, fein)", min_value=-2.0, max_value=2.0, value=0.0, step=0.1)
                 adjust_pitch_button = st.button("Tonhöhe anwenden")
 
             # --- Umkehren ---
@@ -248,6 +311,29 @@ def audio_editor():
             with st.sidebar.expander("Normalisieren", expanded=False):
                 st.subheader("Audio normalisieren")
                 normalize_button = st.button("Normalisieren")
+
+            # --- Echo-Effekt ---
+            with st.sidebar.expander("Echo", expanded=False):
+                st.subheader("Echo-Effekt anwenden")
+                delay_seconds = st.slider("Verzögerung (Sekunden)", min_value=0.0, max_value=1.0, value=0.1, step=0.01)
+                decay = st.slider("Abklingrate", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
+                echo_button = st.button("Echo anwenden")
+
+            # --- Hall-Effekt ---
+            with st.sidebar.expander("Hall", expanded=False):
+                st.subheader("Hall-Effekt anwenden")
+                room_size = st.slider("Raumgröße", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
+                damping = st.slider("Dämpfung", min_value=0.0, max_value=1.0, value=0.5, step=0.01)
+                wet_level = st.slider("Hall-Anteil", min_value=0.0, max_value=1.0, value=0.3, step=0.01)
+                reverb_button = st.button("Hall anwenden")
+
+             # --- Stimmverzerrung ---
+            with st.sidebar.expander("Stimmverzerrung", expanded=False):
+                st.subheader("Stimme verzerren (effektvoll)")
+                pitch_shift_amount = st.slider("Tonhöhenverschiebung (Halbtöne, stark)", min_value=-12, max_value=12, value=3, step=1)
+                bit_depth = st.slider("Bit Depth", min_value=1, max_value=16, value=8, step=1)
+                voice_distortion_button = st.button("Stimme verzerren")
+
 
             # --- Verarbeitungslogik (Buttons) ---
             if reduce_noise_button:
@@ -299,7 +385,6 @@ def audio_editor():
                         y_to_adjust = y
                     y_pitch_adjusted = adjust_pitch(y_to_adjust, sr, pitch_factor)
                     st.session_state['processed_audio'] = y_pitch_adjusted
-                    st.session_state['processed_sr'] = sr
                     st.success("Tonhöhe angepasst!")
 
             if reverse_button:
@@ -336,6 +421,40 @@ def audio_editor():
                     st.session_state['processed_sr'] = sr
                     st.success("Audio normalisiert!")
 
+            if echo_button:
+                with st.spinner("Echo-Effekt wird angewendet..."):
+                    if 'processed_audio' in st.session_state:
+                        y_to_echo = st.session_state['processed_audio']
+                    else:
+                        y_to_echo = y
+                    y_echoed = apply_echo(y_to_echo, sr, delay_seconds, decay)
+                    st.session_state['processed_audio'] = y_echoed
+                    st.session_state['processed_sr'] = sr
+                    st.success("Echo-Effekt angewendet!")
+
+            if reverb_button:
+                with st.spinner("Hall-Effekt wird angewendet..."):
+                    if 'processed_audio' in st.session_state:
+                        y_to_reverb = st.session_state['processed_audio']
+                    else:
+                        y_to_reverb = y
+                    y_reverberated = apply_reverb(y_to_reverb, sr, room_size, damping, wet_level)
+                    st.session_state['processed_audio'] = y_reverberated
+                    st.session_state['processed_sr'] = sr
+                    st.success("Hall-Effekt angewendet!")
+
+            if voice_distortion_button:
+                with st.spinner("Stimmverzerrung wird angewendet..."):
+                    if 'processed_audio' in st.session_state:
+                        y_to_distort = st.session_state['processed_audio']
+                    else:
+                        y_to_distort = y
+                    y_distorted = apply_voice_distortion(y_to_distort, sr, pitch_shift_amount, bit_depth)
+                    st.session_state['processed_audio'] = y_distorted
+                    st.session_state['processed_sr'] = sr
+                    st.success("Stimmverzerrung angewendet!")
+
+
             if 'processed_audio' in st.session_state:
                 st.subheader("Verarbeitetes Audio")
                 processed_audio = np.asarray(st.session_state['processed_audio'])
@@ -344,19 +463,29 @@ def audio_editor():
 
                 st.sidebar.header("Download")
                 with st.sidebar:
-                    output_format_download = st.selectbox("Download Format", ["WAV"], index=0)
+                    # Audio-Download-Einstellungen
+                    output_format_download = st.selectbox("Download Format", ["WAV", "MP3", "OGG"], index=0)
+                    bitrate_optionen_audio = ["32k", "64k", "96k", "128k", "160k", "192k", "256k", "320k"]
+                    bitrate_audio = st.selectbox("Audio Bitrate:", bitrate_optionen_audio, index=3) # Default 128k
 
-                    buffer = io.BytesIO()
-                    sf.write(buffer, processed_audio, st.session_state['processed_sr'], format='WAV')
-                    wav_data = buffer.getvalue()
+                    download_button_label = f"Verarbeitetes Audio herunterladen als {output_format_download} ({bitrate_audio})"
+                    filename = f"bearbeitetes_audio.{output_format_download.lower()}"
 
-                    st.download_button(
-                        label="Verarbeitetes Audio herunterladen",
-                        data=wav_data,
-                        file_name="bearbeitetes_audio.wav",
-                        mime="audio/wav"
-                    )
+                    try:
+                        # Speichern der Audio-Datei mit den angegebenen Einstellungen
+                        output_path = save_audio(processed_audio, st.session_state['processed_sr'], filename, format=output_format_download, bitrate=bitrate_audio)
 
+                        # Download-Button
+                        with open(output_path, "rb") as file:
+                            st.download_button(
+                                label=download_button_label,
+                                data=file.read(),
+                                file_name=filename,
+                                mime=f"audio/{output_format_download.lower()}"
+                            )
+
+                    except Exception as e:
+                        st.error(f"Fehler beim Erstellen der Download-Datei: {e}")
             else:
                 display_waveform(y, sr, start_time, end_time)
 
@@ -372,11 +501,11 @@ def video_untertitelung():
     model_option = st.selectbox(
         "Whisper-Modell wählen:",
         ["tiny", "base", "small", "medium", "large"],
-        index=3
+        index=1  # Standardmäßig "base" auswählen, da "medium" nicht immer empfohlen wird
     )
-    print(f"Vor dem Laden des Modells. Inhalt von whisper: {dir(whisper)}")  # Debugging
+
     try:
-        model = whisper.load_model("base") # Harte Kodierung für den Anfang
+        model = whisper.load_model(model_option)
         print("Modell erfolgreich geladen!")  # Debugging
     except Exception as e:
         st.error(f"Fehler beim Laden des Modells: {e}")
@@ -393,6 +522,16 @@ def video_untertitelung():
     video_datei = st.file_uploader("Video hochladen", type=["mp4", "mov", "avi", "mkv"], key="video")
 
     srt_inhalt = ""
+
+    # Optionen für die Videoqualität
+    bitrate_optionen = ["2M", "5M", "8M", "10M"]
+    aufloesung_optionen = ["640x360", "1280x720", "1920x1080"]
+    framerate_optionen = [24, 25, 30, 60]
+
+    bitrate = st.selectbox("Video Bitrate (Qualität):", bitrate_optionen, index=1)
+    resolution = st.selectbox("Video Auflösung:", aufloesung_optionen, index=1)
+    fps = st.selectbox("Video Framerate:", framerate_optionen, index=2)
+
 
     with tempfile.TemporaryDirectory() as tmpdir:
         if audio_datei:
@@ -422,7 +561,7 @@ def video_untertitelung():
                     f.write(srt_bearbeitet)
 
                 with st.spinner("Video und Untertitel werden zusammengeführt..."):
-                    success, error_message = merge_video_mit_srt(video_path, srt_path, output_video_path)
+                    success, error_message = merge_video_mit_srt(video_path, srt_path, output_video_path, bitrate, resolution, fps)
                     if success:
                         st.success("Video mit Untertiteln erstellt!")
                         with open(output_video_path, "rb") as final_video:
