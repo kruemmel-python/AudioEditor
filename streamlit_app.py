@@ -12,7 +12,7 @@ import os
 import tempfile
 import subprocess
 import logging
-import whisper
+import whisper  # Wichtig: Sicherstellen, dass whisper installiert ist
 from typing import Union
 
 # Logging konfigurieren
@@ -124,7 +124,7 @@ def sekunden_zu_srt_zeit(sekunden: float) -> str:
     return f"{h:02}:{m:02}:{s:02},{millis:03}"
 
 
-def transkribiere_audio_zu_srt(dateipfad: str, model, sprache: Union[str, None]) -> str:
+def transkribiere_audio_zu_srt(dateipfad: str, model, sprache: Union[str, None]) -> str:  # Typhinweis entfernt
     ergebnis = model.transcribe(dateipfad, fp16=False, language=sprache)
     segmente = ergebnis['segments']
     return erstelle_srt(segmente)
@@ -374,7 +374,13 @@ def video_untertitelung():
         ["tiny", "base", "small", "medium", "large"],
         index=3
     )
-    model = whisper.load_model(model_option)
+    print(f"Vor dem Laden des Modells. Inhalt von whisper: {dir(whisper)}")  # Debugging
+    try:
+        model = whisper.load_model(model_option)
+        print("Modell erfolgreich geladen!")  # Debugging
+    except Exception as e:
+        st.error(f"Fehler beim Laden des Modells: {e}")
+        return  # Beende die Funktion, wenn das Modell nicht geladen werden kann
 
     sprache = st.selectbox(
         "Sprache des Videos wählen:",
