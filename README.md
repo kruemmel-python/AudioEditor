@@ -2,7 +2,8 @@
 
 Ein vielseitiges Streamlit-basiertes Tool zur Audiobearbeitung und automatischen Video-Untertitelung.
 
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/audioeditor.streamlit.app)  <-- *Ersetze dies durch deinen Streamlit-Link!*
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/audioeditor-d5vappwrtpddfj2imgxdgqk.streamlit.app)  <-- *Ersetze dies durch deinen Streamlit-Link!*
+
 [![Python](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
